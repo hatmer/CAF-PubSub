@@ -1,1 +1,1 @@
-# CAF-PubSub
+Only works when run from the actor-framework/examples directory
