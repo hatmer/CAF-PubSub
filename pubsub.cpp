@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <iostream>
 #include <vector>
+#include <queue>
 
 #include "caf/all.hpp"
 
@@ -14,19 +15,22 @@ using std::vector;
 using std::chrono::seconds;
 using namespace caf;
 
-// --(rst-topic-begin)--
+// Each topic is a stateful actor
 using topic
   = typed_actor<result<void>(put_atom, int32_t), // 'put' writes to the topic
                 result<int32_t>(get_atom)>;      // 'get 'reads from the topic
+
 
 struct topic_state {
   static constexpr inline const char* name = "topic";
 
   topic::pointer self;
 
-  int32_t value;
+  int32_t topicID;
+  std::queue<int32_t>* q = new std::queue<int32_t>;
+  
 
-  topic_state(topic::pointer ptr, int32_t val) : self(ptr), value(val) {
+  topic_state(topic::pointer ptr, int32_t val) : self(ptr), topicID(val) {
     // nop
   }
 
@@ -36,8 +40,12 @@ struct topic_state {
 
   topic::behavior_type make_behavior() {
     return {
-      [=](put_atom, int32_t val) { value = val; },
-      [=](get_atom) { return value; },
+      [=](put_atom, int32_t val) { q->push(val); },
+      [=](get_atom) { 
+          int32_t x = q->front(); 
+          q->pop(); 
+          return x; 
+      },
     };
   }
 };
