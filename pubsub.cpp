@@ -38,8 +38,9 @@ struct topic_state {
     // nop
   }
 
+	//copy prevention?
   topic_state(const topic_state&) = delete;
-
+	//assignment copy prevention?
   topic_state& operator=(const topic_state&) = delete;
 
   topic::behavior_type make_behavior() {
@@ -94,6 +95,16 @@ void fetch(blocking_actor* self, int32_t subscriberID, vector<topic> topics) {
         });    
 }
 
+void non_blocking_fetch(event_based_actor* self, int32_t subscriberID, vector<topic> topics) {
+  for (auto& x : topics)
+    self->request(x, seconds(1), get_atom_v, subscriberID).await(
+			[=](int32_t y) {
+				aout(self) << "subscriber #" << subscriberID << " received message <" << y << ">" << endl;
+			});
+}
+
+
+
 
 // testing
 void caf_main(actor_system& system) {
@@ -108,6 +119,10 @@ void caf_main(actor_system& system) {
   system.spawn(fetch, 1, topics);
   system.spawn(fetch, 2, topics);
   system.spawn(fetch, 3, topics);
+	
+	system.spawn(non_blocking_fetch, 4, topics);
+	system.spawn(non_blocking_fetch, 5, topics);
+	system.spawn(non_blocking_fetch, 6, topics);
 
   // publish "5" to each topic
   aout(self) << "publisher publishing messages" << endl;
@@ -118,6 +133,10 @@ void caf_main(actor_system& system) {
   system.spawn(fetch, 1, topics);
   system.spawn(fetch, 2, topics);
   system.spawn(fetch, 3, topics);
+	
+	system.spawn(non_blocking_fetch, 4, topics);
+	system.spawn(non_blocking_fetch, 5, topics);
+	system.spawn(non_blocking_fetch, 6, topics);
   
 }
 // --(rst-main-end)--
