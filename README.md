@@ -1,1 +1,1 @@
-Only works when run from the actor-framework/examples directory
+Final Project for Language Abstractions for Concurrent and Parallel Programming
