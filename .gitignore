@@ -1,2 +1,4 @@
 #executables
 *.out
+
+*.o
