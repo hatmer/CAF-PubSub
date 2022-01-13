@@ -1,9 +1,9 @@
 
 
-Pull:
+pull:
 	g++ -g stringPubSub.cpp -std=c++17 -lcaf_core -lcaf_io -o pull_main.out && ./pull_main.out
 	
-Push:
+push:
 	g++ -g stringPubSubPush.cpp -std=c++17 -lcaf_core -lcaf_io -o push_main.out && ./push_main.out
 
 test:
