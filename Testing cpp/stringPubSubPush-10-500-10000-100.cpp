@@ -8,7 +8,6 @@
 #include <functional>
 #include <cassert>
 
-#include "ftypename.hpp"
 
 #include "caf/all.hpp"
 
@@ -37,7 +36,6 @@ namespace pusher {
 		int32_t topicID;
 		int32_t subscriber_id_offset = 0; //wrap around to be implemented mb
 
-		std::map<int32_t, queue<std::string>> state; //to be removed
 		std::map<int32_t, subber> subscribers; //weak pointer
 
 		topic_state(topic::pointer ptr, int32_t val) : self(ptr), topicID(val) {
@@ -53,7 +51,7 @@ namespace pusher {
 			return {
 				[=](put_atom, std::string val) { 
 						// append the new message to each subscriber's queue
-						aout(self) << "pushing message <"<< val << "> to subscribers. " << endl;
+						//aout(self) << "pushing message <"<< val << "> to subscribers. " << endl;
 						for ( const auto& [key, sub] : subscribers ) {
 								//aout(self) << "decltype(myPair) is " << ftype_name<decltype(myPair)>() << '\n';
 								//return (put_atom_v, val);
@@ -79,9 +77,7 @@ namespace pusher {
 	using topic_impl = topic::stateful_impl<topic_state>;
 
 
-	// blocking functions that call receive on each topic in vector: correspond to publisher and subscriber
-
-	void publisher(blocking_actor* self, std::string message, vector<topic> topics) {
+	void publisher(event_based_actor* self, std::string message, vector<topic> topics) {
 		for (auto& top : topics)
 			self->request(top, caf::infinite, put_atom_v, message);
 	}
@@ -94,47 +90,21 @@ namespace pusher {
 
 	subber::behavior_type ordered_subscriber(subber::stateful_pointer<subscriber_state> self, vector<topic> topics, std::function<void(std::string)> consumer_function) {
 		for (auto& top : topics)
-			self->request(top, caf::infinite, get_atom_v).then(
+			self->request(top, caf::infinite, get_atom_v).await(
 				[=](int32_t topic_id) {
 						//self->state.subscriber_id = sub_id;
-						aout(self) << "subscription of topic <" << topic_id << "> started" << endl;
+						//aout(self) << "subscription of topic <" << topic_id << "> started" << endl;
 				}
 		);
 		
 		
 		return {
 				[=](put_atom, std::string topic_message, int32_t topic_id) {
-					aout(self) << "subscriber of topic <" << topic_id << "> received a message: <" << topic_message << ">, performing subscriber function on message..." << endl;
+					//aout(self) << "subscriber of topic <" << topic_id << "> received a message: <" << topic_message << ">, performing subscriber function on message..." << endl;
 					consumer_function(topic_message);
 				} //exit fun;
 		};
 	}
-
-	void unordered_subscriber() {
-		
-	}
-
-	/*
-	void fetch(blocking_actor* self, int32_t subscriberID, vector<topic> topics) {
-		for (auto& x : topics)
-			self->request(x, seconds(1), get_atom_v, subscriberID)
-				.receive(
-					[&](std::string y) {
-						aout(self) << "subscriber #" << subscriberID << " received message <" << y << ">" << endl;
-					},
-					[&](error& err) {
-						aout(self) << "topic #" << x.id() << " -> " << to_string(err) << endl;
-					});
-	}
-
-	void non_blocking_fetch(event_based_actor* self, int32_t subscriberID, vector<topic> topics) {
-		for (auto& x : topics)
-			self->request(x, seconds(1), get_atom_v, subscriberID).await(
-				[=](std::string y) {
-					aout(self) << "subscriber #" << subscriberID << " received message <" << y << ">" << endl;
-				});
-	}
-	*/
 
 
 
@@ -142,46 +112,38 @@ namespace pusher {
 	
 }
 
+void publisher_loop(event_based_actor* self, vector<pusher::topic> topics, int max, int msg_size) {
+	std::string msg = std::string(msg_size, 's');
+	for(int i = 0; i < max; i++) {
+		//for (auto& top : topics)
+		self->spawn(pusher::publisher, msg, topics);
+			//self->request(top, caf::infinite, put_atom_v, message);
+	}
+}
+
 void caf_main(actor_system& system) {
 		using namespace pusher;
-		// std::cout << "decltype(hej text) is " << ftype_name<decltype("hej")>() << '\n';
-		// std::string s = "hehe";
-		// std::cout << "decltype(hehe text) is " << ftype_name<decltype(s)>() << '\n';
+		int TOPICS = 10;
+		int SUBS = 500;
+		int PUBS_LOOPS = 10000 / 100;
+		int MSG_SIZE = 100;
 		
-		
-		// vector of 5 different topics
 		vector<topic> topics;
-		for (int32_t i = 0; i < 5; ++i)
+		for (int32_t i = 0; i < TOPICS; ++i)
 			topics.emplace_back(system.spawn<topic_impl>(i));
 		scoped_actor self{system};
-		//std::cout << "decltype(self{system}) is " << ftype_name<decltype(self)>() << '\n';
-		// create three subscribers (they each subscribe to all topics...)
-		// fetching a topic creates a subscription for this subscriber if not yet subscribed
-		//system.spawn(fetch, 1, topics);
-		auto sub = system.spawn(ordered_subscriber, topics, [](std::string s){std::cout << s << std::endl;});
 		
-		//system.spawn(non_blocking_fetch, 6, topics);
+		
+		for(int i = 0; i < SUBS; i++)
+			auto sub = system.spawn(ordered_subscriber, topics, [=](std::string s){/*aout(self) << s << std::endl*/});
 
 		// publish "hey" to each topic
 		aout(self) << "publisher publishing messages" << endl;
-		system.spawn(publisher, "hey there", topics);
 		
-		//std::cout << "decltype(sub) is " << ftype_name<decltype(sub)>() << '\n';
-		
-		aout(self) << "publisher publishing messages" << endl;
-		system.spawn(publisher, "hello again", topics);
-
-		// subscribers read from each topic
-		aout(self) << "subscribers fetching messages" << endl;
-		//system.spawn(fetch, 1, topics);
-		//system.spawn(fetch, 2, topics);
-		//system.spawn(fetch, 3, topics);
-		
-		//system.spawn(non_blocking_fetch, 4, topics);
-		//system.spawn(non_blocking_fetch, 5, topics);
-		//system.spawn(non_blocking_fetch, 6, topics);
+		//std::string s;
+		for(int i = 0; i < PUBS_LOOPS; i++)
+			system.spawn(publisher_loop, topics, 100, MSG_SIZE);
 		
 	}
-	// --(rst-main-end)--
 
 CAF_MAIN()
