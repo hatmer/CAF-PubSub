@@ -7,7 +7,6 @@
 #include <string>
 #include <functional>
 
-#include "ftypename.hpp"
 
 #include "caf/all.hpp"
 
@@ -53,9 +52,9 @@ struct topic_state {
           for ( const auto& [key, queueCont] : state ) {
 							//aout(self) << "decltype(myPair) is " << ftype_name<decltype(myPair)>() << '\n';
 							
-              aout(self) << "pushing message "<< val << " to queue for subscriber #" << key << endl;
+              aout(self) << "pushing message <<"<< val << ">> to queue for subscriber #" << key << endl;
               state[key].push(val); 
-              aout(self) << "front of queue is now " << state[key].front() << endl;
+              //aout(self) << "front of queue is now <<" << state[key].front() <<  ">>" << endl;
           }
       },
       [=](get_atom, int32_t subscriberID) { 
@@ -65,10 +64,13 @@ struct topic_state {
             //state[subscriberID] = new queue<std::string>;
             return std::string("");  // no message when subscribing
           } else {
-						aout(self) << "fetching head of queue for subscriber #" << subscriberID << endl;
-            if (state[subscriberID].empty())
-              return std::string("");  // no message available
+            if (state[subscriberID].empty()) {
+							aout(self) << "fetching head of queue for subscriber #" << subscriberID << ", but it was empty" << endl;
+							return std::string("");  // no message available
+						}
 						std::string x = state[subscriberID].front(); 
+						
+						aout(self) << "fetching head of queue for subscriber #" << subscriberID << ", the message is: <<" << x << ">>" << endl;
 						state[subscriberID].pop(); 
 						return x;
           }
@@ -85,12 +87,20 @@ void publisher(event_based_actor* self, std::string message, vector<topic> topic
     self->request(x, caf::infinite, put_atom_v, message);
 }
 
+void blocking_publisher(blocking_actor* self, std::string message, vector<topic> topics) {
+  for (auto& x : topics)
+    self->request(x, caf::infinite, put_atom_v, message);
+}
+
 void fetch(blocking_actor* self, int32_t subscriberID, vector<topic> topics, std::function<void(std::string)> consumer_function) {
   for (auto& x : topics)
     self->request(x, caf::infinite, get_atom_v, subscriberID)
       .receive(
         [&](std::string y) {
-					consumer_function(y);
+					if(y.compare(std::string(""))  != 0) {
+						//aout(self) << "msg is: <" << y << ">" <<  endl;
+						consumer_function(y);
+					}
         },
         [&](error& err) {
           aout(self) << "topic #" << x.id() << " -> " << to_string(err) << endl;
@@ -99,52 +109,71 @@ void fetch(blocking_actor* self, int32_t subscriberID, vector<topic> topics, std
 
 void non_blocking_fetch(event_based_actor* self, int32_t subscriberID, vector<topic> topics, std::function<void(std::string)> consumer_function) {
   for (auto& x : topics)
-    self->request(x, caf::infinite, get_atom_v, subscriberID).await(
+    self->request(x, caf::infinite, get_atom_v, subscriberID).then(
 			[=](std::string y) {
-				consumer_function(y);
+				if(y.compare(std::string("")) != 0) {
+					//aout(self) << "msg is: <" << y << ">" <<  endl;
+					consumer_function(y);
+				}
 			});
 }
-
-
-
-
+#include <thread>
 // Showcase
 void caf_main(actor_system& system) {
-	std::cout << "decltype(hej text) is " << ftype_name<decltype("hej")>() << '\n';
-	std::string s = "hehe";
-	std::cout << "decltype(hehe text) is " << ftype_name<decltype(s)>() << '\n';
-	
-	
+
   // vector of 5 different topics
   vector<topic> topics;
   for (int32_t i = 0; i < 5; ++i)
     topics.emplace_back(system.spawn<topic_impl>(i));
   scoped_actor self{system};
 
-  // create three subscribers (they each subscribe to all topics...)
+  // create four subscribers (they each subscribe to some topics...)
   // fetching a topic creates a subscription for this subscriber if not yet subscribed
-  system.spawn(fetch, 1, topics, [=](std::string s){});
-  //system.spawn(fetch, 2, topics);
-  //system.spawn(fetch, 3, topics);
+	auto sub1_topics = vector<topic>(1, topics[0]);
+  system.spawn(non_blocking_fetch, 1, sub1_topics, [=](std::string s){});
 	
-	//system.spawn(non_blocking_fetch, 4, topics);
-	//system.spawn(non_blocking_fetch, 5, topics);
-	system.spawn(non_blocking_fetch, 6, topics, [=](std::string s){});
+	auto sub2_topics = vector<topic>(1, topics[1]);
+	system.spawn(non_blocking_fetch, 2, sub2_topics, [&](std::string s){});
+	auto sub3_topics = vector<topic>(1, topics[2]);
+	system.spawn(non_blocking_fetch, 3, sub3_topics, [&](std::string s){});
+	system.spawn(non_blocking_fetch, 4, topics, [&](std::string s){});
 
-  // publish "5" to each topic
+	for(int i = 0; i < 9999999; i++) //wait
+		3+4;
+  // publish "hey there" to each topic
   aout(self) << "publisher publishing messages" << endl;
-  system.spawn(publisher, "hey there", topics);
+  system.spawn(publisher, "hey there to all", topics);
+	system.spawn(publisher, "this is only for topic 1", sub1_topics);
+	system.spawn(publisher, "topic 3 exclusive", sub3_topics);
 
   // subscribers read from each topic
-  aout(self) << "subscribers fetching messages" << endl;
-  system.spawn(fetch, 1, topics, [=](std::string s){});
-  //system.spawn(fetch, 2, topics);
-  //system.spawn(fetch, 3, topics);
-	
-	//system.spawn(non_blocking_fetch, 4, topics);
-	//system.spawn(non_blocking_fetch, 5, topics);
-	system.spawn(non_blocking_fetch, 6, topics, [=](std::string s){});
   
+	
+	for(int i = 0; i < 99999999; i++) //wait
+		3+4;
+	
+	aout(self) << "subscribers fetching messages even though they may not have arrived" << endl;
+	/*
+	
+	system.spawn(fetch, 1, sub1_topics, [&](std::string s){aout(self) << "Subscriber 1  consuming data: <<<<<" << s << ">>>>> " << std::endl;});
+  system.spawn(fetch, 2, sub2_topics, [&](std::string s){aout(self) << "Subscriber 2  consuming data: <<<<<" << s << ">>>>> " << std::endl;});
+  system.spawn(fetch, 3, sub3_topics, [&](std::string s){aout(self) << "Subscriber 3  consuming data: <<<<<" << s << ">>>>> " << std::endl;});
+	
+  system.spawn(fetch, 4, topics, [&](std::string s){aout(self) << "Subscriber 4 peaking at all data, consuming data: <<<<<" << s << ">>>>>" << std::endl;});
+	*/
+	
+	
+  system.spawn(non_blocking_fetch, 1, sub1_topics, [&](std::string s){aout(self) << "Subscriber 1 consuming data: <<<<<" << s << ">>>>> " << std::endl;});
+  system.spawn(non_blocking_fetch, 2, sub2_topics, [&](std::string s){aout(self) << "Subscriber 2 consuming data: <<<<<" << s << ">>>>> " << std::endl;});
+  system.spawn(non_blocking_fetch, 3, sub3_topics, [&](std::string s){aout(self) << "Subscriber 3 consuming data: <<<<<" << s << ">>>>> " << std::endl;});
+	
+  system.spawn(non_blocking_fetch, 4, topics, [&](std::string s){aout(self) << "Subscriber 4 peaking at all data, consuming data: <<<<<" << s << ">>>>> " << std::endl;});
+	
+	system.spawn(non_blocking_fetch, 1, sub1_topics, [&](std::string s){aout(self) << "Subscriber 1 consuming data: <<<<<" << s << ">>>>> " << std::endl;});
+	system.spawn(non_blocking_fetch, 2, sub2_topics, [&](std::string s){aout(self) << "Subscriber 2 consuming data: <<<<<" << s << ">>>>> " << std::endl;});
+  system.spawn(non_blocking_fetch, 3, sub3_topics, [&](std::string s){aout(self) << "Subscriber 3 consuming data: <<<<<" << s << ">>>>> " << std::endl;});
+	system.spawn(non_blocking_fetch, 4, topics, [&](std::string s){aout(self) << "Subscriber 4 peaking at all data, consuming data: <<<<<" << s << ">>>>> " << std::endl;});
+	
 }
 // --(rst-main-end)--
 
