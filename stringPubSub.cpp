@@ -1,7 +1,3 @@
-/******************************************************************************\
- * Illustrates semantics of request().{then|await|receive}.                   *
-\******************************************************************************/
-
 #include <chrono>
 #include <cstdint>
 #include <iostream>
@@ -101,7 +97,7 @@ void fetch(blocking_actor* self, int32_t subscriberID, vector<topic> topics) {
         },
         [&](error& err) {
           aout(self) << "topic #" << x.id() << " -> " << to_string(err) << endl;
-        });    
+        });
 }
 
 void non_blocking_fetch(event_based_actor* self, int32_t subscriberID, vector<topic> topics) {
